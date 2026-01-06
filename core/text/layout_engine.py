@@ -169,7 +169,6 @@ def check_fit(
 
         hb_scale = int(scale_factor * (2**16))
         hb_font.scale = (hb_scale, hb_scale)
-
         skia_font_test = skia.Font(regular_typeface, font_size)
         try:
             metrics = skia_font_test.getMetrics()
@@ -217,6 +216,7 @@ def check_fit(
             return None
 
         tokens: List[Tuple[str, bool]] = tokenize_styled_text(text)
+        # breakpoint()
         augmented_tokens: List[str] = []
 
         if hyphenate_before_scaling:
@@ -485,7 +485,7 @@ def find_optimal_layout(
         mid = (low + high) // 2
         if mid == 0:
             break
-
+        
         log_message(f"Testing size {mid}", verbose=verbose)
 
         succeeded_at_current_size = False

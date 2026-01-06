@@ -427,7 +427,6 @@ def load_font_data(font_path: str) -> bytes:
         except Exception as e:
             log_message(f"Font file read error: {e}", always_print=True)
             raise FontError(f"Failed to load font file: {font_path}") from e
-
     return font_data
 
 

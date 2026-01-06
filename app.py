@@ -30,7 +30,23 @@ def custom_except_hook(exc_type, exc_value, exc_traceback):
 
 
 sys.excepthook = custom_except_hook
+# Replace 127.0.0.1:7890 with your actual proxy address and port
+proxy = "http://127.0.0.1:7897" 
 
+os.environ["HTTP_PROXY"] = proxy
+os.environ["HTTPS_PROXY"] = proxy
+# Optional: Ensure HuggingFace specifically sees it
+os.environ["HF_HUB_PROXY"] = proxy
+try:
+    import httpx
+    from huggingface_hub import set_client_factory
+    
+    def proxied_client_factory():
+        return httpx.Client(proxy=proxy, follow_redirects=True)
+    
+    set_client_factory(proxied_client_factory)
+except ImportError:
+    pass
 
 def _get_pytorch_version_tuple(version_str):
     """Convert version string like '2.9.0' to tuple (2, 9, 0) for comparison."""

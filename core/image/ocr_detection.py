@@ -687,11 +687,9 @@ def extract_text_with_manga_ocr(
     """
     if not images:
         return []
-
     try:
         model_manager = get_model_manager()
         manga_ocr_instance = model_manager.get_manga_ocr(verbose=verbose)
-
         extracted_texts = []
         for i, img in enumerate(images):
             try:

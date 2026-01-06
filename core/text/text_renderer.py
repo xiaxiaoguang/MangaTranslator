@@ -78,11 +78,26 @@ def render_text_skia(
     if bubble_width <= 0 or bubble_height <= 0:
         log_message(f"Invalid bbox dimensions: {bbox}", always_print=True)
         raise RenderingError(f"Invalid bounding box dimensions: {bbox}")
-
     # em dash can break wrapping
     normalized_text = text.replace("—", "-")
-
     clean_text = " ".join(normalized_text.split())
+
+    # def is_cjk(char):
+    #     return any([
+    #         '\u4e00' <= char <= '\u9fff', # Unified Ideographs
+    #         '\u3040' <= char <= '\u309f', # Hiragana
+    #         '\u30a0' <= char <= '\u30ff', # Katakana
+    #     ])
+
+    # # Inside render_text_skia, replace the "clean_text =" line with:
+    # if any(is_cjk(c) for c in normalized_text):
+    #     # For Chinese, we remove extra internal spaces but don't force spaces 
+    #     # between every character.
+    #     clean_text = re.sub(r'\s+', '', normalized_text).strip()
+    # else:
+    #     # Standard English/Western behavior
+    #     clean_text = " ".join(normalized_text.split())
+
     if not clean_text:
         return pil_image
 
@@ -109,6 +124,7 @@ def render_text_skia(
     layout_box_top_left = None
     safe_area_result = None
     safe_area_fallback_logged = False
+
     if cleaned_mask is not None:
         try:
             safe_area_result = calculate_centroid_expansion_box(

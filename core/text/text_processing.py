@@ -74,38 +74,56 @@ def parse_styled_segments(text: str) -> List[Tuple[str, str]]:
 
     return [(txt, style) for txt, style in segments if txt]
 
-
 def tokenize_styled_text(text: str) -> List[Tuple[str, bool]]:
-    """
-    Tokenizes text into atomic units for wrapping where styled blocks are
-    preserved as single, unbreakable tokens.
-
-    Returns: List[Tuple[str, bool]] where each tuple is (token_text, is_styled).
-    - Styled tokens are split into per-word tokens, each wrapped with the same markers,
-      to allow wrapping at word boundaries while preserving style.
-    - Plain text outside markers is split on whitespace into word tokens.
-    """
     tokens: List[Tuple[str, bool]] = []
     last_end = 0
+    CJK_REGEX = re.compile(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\u3400-\u4dbf]')
+    def process_plain_text(raw_text: str, is_styled: bool, marker: str = ""):
+        # First, split by whitespace as before
+        parts = raw_text.split()
+        for part in parts:
+            # For each part, check if it contains CJK characters
+            # We want to split CJK characters but keep English words as chunks
+            sub_tokens = []
+            current_latin_chunk = ""
+            
+            for char in part:
+                if CJK_REGEX.match(char):
+                    # If we have a Latin chunk saved up, push it first
+                    if current_latin_chunk:
+                        sub_tokens.append(current_latin_chunk)
+                        current_latin_chunk = ""
+                    # Push the CJK character as its own token
+                    sub_tokens.append(char)
+                else:
+                    # Collect Latin/ASCII characters
+                    current_latin_chunk += char
+            
+            if current_latin_chunk:
+                sub_tokens.append(current_latin_chunk)
+            
+            # Wrap and add to main tokens list
+            for sub in sub_tokens:
+                token_val = f"{marker}{sub}{marker}" if is_styled else sub
+                tokens.append((token_val, is_styled))
+
     for match in STYLE_PATTERN.finditer(text):
         start, end = match.span()
+        # Process preceding plain text
         if start > last_end:
-            preceding = text[last_end:start]
-            for w in preceding.split():
-                tokens.append((w, False))
+            process_plain_text(text[last_end:start], False)
 
+        # Process styled block
         marker = match.group(1)
         content = match.group(2)
         if content:
-            for w in content.split():
-                tokens.append((f"{marker}{w}{marker}", True))
+            process_plain_text(content, True, marker)
 
         last_end = end
 
+    # Process trailing text
     if last_end < len(text):
-        trailing = text[last_end:]
-        for w in trailing.split():
-            tokens.append((w, False))
+        process_plain_text(text[last_end:], False)
 
     return tokens
 
@@ -226,7 +244,11 @@ def find_optimal_breaks_dp(
 
         # Calculate widths for all tokens
         token_w: List[float] = [word_width_func(t) for t in tokens]
-
+        # Helper to check if a token is CJK
+        def is_cjk_token(t: str) -> bool:
+            # Strip style markers like ** or // if present
+            core = re.sub(r'^[\W_]+|[\W_]+$', '', t) 
+            return bool(re.search(r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]', core))
         N = len(tokens)
         min_cost: List[float] = [float("inf")] * (N + 1)
         path: List[int] = [0] * (N + 1)
@@ -234,12 +256,14 @@ def find_optimal_breaks_dp(
 
         for i in range(1, N + 1):
             line_width = 0.0
-            num_spaces = 0
             for j in range(i - 1, -1, -1):
-                if num_spaces > 0:
-                    line_width += space_width
+                if j < i - 1:
+                    current_tok = tokens[j]
+                    next_tok = tokens[j + 1]
+                    if not is_cjk_token(current_tok) and not is_cjk_token(next_tok):
+                        line_width += space_width        
+                                
                 line_width += token_w[j]
-                num_spaces += 1
 
                 if line_width > max_width:
                     break
@@ -266,14 +290,21 @@ def find_optimal_breaks_dp(
             return None
 
         lines: List[str] = []
-        current_break = N
-        while current_break > 0:
-            prev_break = path[current_break]
-            line = " ".join(tokens[prev_break:current_break])
-            lines.insert(0, line)
-            current_break = prev_break
-
+        curr = N
+        while curr > 0:
+            prev = path[curr]
+            # THE SECOND FIX: Join with "" for CJK, " " for Latin
+            line_tokens = tokens[prev:curr]
+            line_str = ""
+            for k, t in enumerate(line_tokens):
+                if k > 0:
+                    # Only add space if both are Latin
+                    if not is_cjk_token(line_tokens[k-1]) and not is_cjk_token(t):
+                        line_str += " "
+                line_str += t
+            lines.insert(0, line_str)
+            curr = prev
         return lines
-
+    
     except Exception:
         return None

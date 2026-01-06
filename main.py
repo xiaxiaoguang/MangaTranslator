@@ -25,6 +25,22 @@ from core.validation import (
 )
 from utils.logging import log_message
 
+proxy = "http://127.0.0.1:7897" 
+os.environ["HTTP_PROXY"] = proxy
+os.environ["HTTPS_PROXY"] = proxy
+# Optional: Ensure HuggingFace specifically sees it
+os.environ["HF_HUB_PROXY"] = proxy
+try:
+    import httpx
+    from huggingface_hub import set_client_factory
+    
+    def proxied_client_factory():
+        return httpx.Client(proxy=proxy, follow_redirects=True)
+    
+    set_client_factory(proxied_client_factory)
+except ImportError:
+    pass
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -330,7 +346,7 @@ def main():
         action="store_false",
         help="Disable hyphenation of long words before reducing font size.",
     )
-    parser.set_defaults(hyphenate_before_scaling=True)
+    
     parser.add_argument(
         "--hyphen-penalty",
         type=float,
@@ -634,6 +650,11 @@ def main():
     )
 
     args = parser.parse_args()
+    
+    from core.text.text_processing import (
+        is_latin_style_language
+    )
+    args.hyphenate_before_scaling=is_latin_style_language(args.output_language)
 
     # --- Validate mutually exclusive flags ---
     try:
@@ -667,7 +688,7 @@ def main():
         api_key = args.xai_api_key or os.environ.get("XAI_API_KEY")
         api_key_arg_name = "--xai-api-key"
         api_key_env_var = "XAI_API_KEY"
-        default_model = "grok-4-fast-reasoning"
+        default_model = "grok-4-1-fast"
     elif provider == "DeepSeek":
         api_key = args.deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY")
         api_key_arg_name = "--deepseek-api-key"

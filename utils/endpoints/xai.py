@@ -19,6 +19,7 @@ def call_xai_endpoint(
     max_retries: int = 3,
     base_delay: float = 1.0,
     enable_web_search: bool = False,
+    proxy_url: Optional[str] = "http://127.0.0.1:7897",
 ) -> Optional[str]:
     """
     Calls the xAI Responses API endpoint with the provided data and handles retries.
@@ -45,9 +46,10 @@ def call_xai_endpoint(
     """
     if not api_key:
         raise ValidationError("API key is required for xAI endpoint")
-
+    
     text_part = next((p for p in parts if "text" in p), None)
     image_parts = [p for p in parts if "inline_data" in p]
+    
     if not text_part:
         raise ValidationError("Invalid 'parts' format for xAI: No text prompt found.")
 
@@ -56,7 +58,14 @@ def call_xai_endpoint(
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-
+    
+    proxies = None
+    if proxy_url:
+        proxies = {
+            "http": proxy_url,
+            "https": proxy_url,
+        }
+        
     input_messages = []
     if system_prompt:
         input_messages.append({"role": "system", "content": system_prompt})
@@ -73,7 +82,7 @@ def call_xai_endpoint(
                 base64_image = part["inline_data"]["data"]
                 user_content.append(
                     {
-                        "type": "input_image",
+                        "type": "image_url",
                         "image_url": {"url": f"data:{mime_type};base64,{base64_image}"},
                     }
                 )
@@ -84,7 +93,7 @@ def call_xai_endpoint(
         input_messages.append({"role": "user", "content": user_content})
     else:
         input_messages.append({"role": "user", "content": text_part["text"]})
-
+        
     payload = {
         "model": model_name,
         "input": input_messages,
@@ -103,9 +112,9 @@ def call_xai_endpoint(
         # Mimics OpenAI's functionality
         if reasoning_effort and reasoning_effort in ["high", "low"]:
             payload["reasoning_effort"] = reasoning_effort
-        payload["max_output_tokens"] = max_tokens_value
+        payload["max_tokens"] = max_tokens_value
     else:
-        payload["max_output_tokens"] = generation_config.get("max_tokens", 4096)
+        payload["max_tokens"] = generation_config.get("max_tokens", 4096)
 
     if enable_web_search:
         payload["tools"] = [{"type": "web_search"}]
@@ -120,7 +129,7 @@ def call_xai_endpoint(
             )
 
             response = requests.post(
-                url, headers=headers, json=payload, timeout=timeout
+                url, headers=headers, json=payload, timeout=timeout,proxies=proxies
             )
             response.raise_for_status()
 

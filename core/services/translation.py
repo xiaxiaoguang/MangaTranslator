@@ -76,7 +76,6 @@ Your sole purpose is to accurately transcribe the original text from a series of
 - Do not include section headers, explanations, or formatting outside of this list.
 """  # noqa
 
-
 def _build_system_prompt_translation(
     output_language: str,
     mode: str,
@@ -105,28 +104,31 @@ def _build_system_prompt_translation(
   - If an image contains standalone periods/ellipses, you must return it exactly as it appears.
   - If text is indecipherable, you must return the exact token: `[OCR FAILED]`."""
 
+
+# - **Fidelity:** Focus on intent; translate functionally rather than literally.
+# 
     core_rules = f"""
 ## CORE RULES
 - **Reading Context:** The {input_type} are presented in a {direction} reading order. Do not reorder them.
-- **Cohesion:** Treat the input lines as a continuous narrative. Ensure the translation flows logically and naturally as a cohesive whole.{cohesion_visual}
-- **Fidelity:** Focus on intent; translate functionally rather than literally.
-- **Conciseness:** Keep translations idiomatic and concise.
+- **Deduplication (OCR Artifacts):** Due to OCR errors, the same sentence may appear split or duplicated across multiple bubbles. Detect and remove redundancies: keep only the most complete/coherent version of overlapping content. Repetition is acceptable only for sound effects/moans (e.g., "おッ", "あん", "ジャーッ"). For regular dialogue or narration, output empty string ("") for duplicate parts to prevent repetition.
 - **Emphasis:** If the source text is visually emphasized (bold, slanted, etc.), mirror that emphasis using the STYLING GUIDE.
-- **Punctuation:** Replace ellipses (e.g., "…") with consecutive periods (e.g., "...").
+- **Symbol:** Remove Special characters like heart symbol.
 - **Text Types:**
   - **Spoken Dialogue/Internal Monologue:** Translate naturally, matching the character's personality.
   - **Narration:** Translate neutrally without special styling.
   - **Audible SFX:** Translate physical sounds (Giongo) as standard onomatopoeia.
   - **Mimetic FX:** Translate atmospheric text (Gitaigo) or silent actions as descriptive verbs or adjectives. Do not add a period at the end of the word.
+  - **Conciseness & Style (R18 Doujinshi):** This is adult (R18) doujinshi manga. Keep translations short, informal, casual, and very easy to read. Use simple everyday language. Avoid long or complex sentences—readers want quick, natural flow without effort. 
+
 {edge_cases}
 """  # noqa
 
     shared_components = f"""
 ## ROLE
-You are a professional manga localization translator and editor.
+You are a professional manga localization translator and editor specializing in adult (R18) doujinshi.
 
 ## OBJECTIVE
-Your goal is to produce natural-sounding, high-quality translations in {output_language} that are faithful to the original source's meaning, tone, and visual emphasis.
+Your goal is to produce natural-sounding, high-quality translations in {output_language} that are faithful to the original source's meaning, tone, and visual emphasis, while being short, informal, and effortless to read.
 
 ## STYLING GUIDE
 You must use the following markdown-style markers to convey emphasis:
@@ -152,6 +154,7 @@ You must use the following markdown-style markers to convey emphasis:
 - You must return your response as a single numbered list with exactly one line per input text.
 - The numbering must correspond to the input order (1, 2, 3...).
 - The format must be `i: <translated {output_language} text>` where `i` is the input text number.
+- If a line is identified as a duplicate (non-SFX), output `i:` (empty string).
 - Do not include section headers, explanations, or formatting outside of this list.
 """  # noqa
     else:
@@ -714,7 +717,9 @@ def _parse_llm_response_unified(
             if i in result_dict:
                 final_list.append(result_dict[i])
             else:
-                final_list.append(f"[{provider}: Missing item {i}]")
+                # breakpoint()
+                # Original WRONG,missing = space
+                final_list.append(" ")
 
         log_message(
             f"Parsed {len(result_dict)} items from unified response (expected {total_elements})",
@@ -1031,6 +1036,7 @@ def call_translation_api_batch(
     cache = get_cache()
     cache_key = cache.get_translation_cache_key(images_b64, full_image_b64, config)
     cached_translation = cache.get_translation(cache_key)
+    
     if cached_translation is not None:
         log_message("  - Using cached translation", verbose=debug)
         return cached_translation

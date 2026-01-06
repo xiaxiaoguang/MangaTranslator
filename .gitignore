@@ -21,3 +21,6 @@ __pycache__/
 Thumbs.db
 /.vscode/
 *.log
+a.py
+fonts/
+run.bat
