@@ -1,6 +1,12 @@
-import argparse
 import os
 import sys
+
+# Add the script's directory to sys.path to find local modules (for portable use)
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+if _script_dir not in sys.path:
+    sys.path.insert(0, _script_dir)
+
+import argparse
 from pathlib import Path
 from threading import Thread
 
