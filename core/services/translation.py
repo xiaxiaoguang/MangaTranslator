@@ -71,10 +71,98 @@ Your sole purpose is to accurately transcribe the original text from a series of
 
 ## OUTPUT SCHEMA
 - You must return your response as a single numbered list with exactly one line per input image.
-- The numbering must correspond to the input image order (1, 2, 3...).
+- The numbering must correspond to the input image order (1, 2, 3).
 - The format must be `i: <transcribed {lang_label}text>` where `i` is the input image number.
 - Do not include section headers, explanations, or formatting outside of this list.
 """  # noqa
+
+# def _build_system_prompt_translation(
+#     output_language: str,
+#     mode: str,
+#     reading_direction: str,
+#     full_page_context: bool = False,
+# ) -> str:
+#     direction = (
+#         "right-to-left"
+#         if (reading_direction or "rtl").lower() == "rtl"
+#         else "left-to-right"
+#     )
+#     input_type = "transcriptions" if mode == "two-step" else "image crops"
+
+#     cohesion_visual = (
+#         " Refer to the full-page image to resolve ambiguous context."
+#         if full_page_context
+#         else ""
+#     )
+
+#     if mode == "two-step":
+#         edge_cases = """- **Edge Cases:**
+#   - If an input line contains standalone periods/ellipses, you must return it exactly as it appears.
+#   - If an input line is the exact token `[OCR FAILED]`, you must output it unchanged."""
+#     else:
+#         edge_cases = """- **Edge Cases:**
+#   - If an image contains standalone periods/ellipses, you must return it exactly as it appears.
+#   - If text is indecipherable, you must return the exact token: `[OCR FAILED]`."""
+
+
+# # - **Fidelity:** Focus on intent; translate functionally rather than literally.
+# # 
+#     core_rules = f"""
+# ## CORE RULES
+# - **Reading Context:** The {input_type} are presented in a {direction} reading order. Do not reorder them.
+# - **Deduplication (OCR Artifacts):** Due to OCR errors, the same sentence may appear split or duplicated across multiple bubbles. Detect and remove redundancies: keep only the most complete/coherent version of overlapping content. Repetition is acceptable only for sound effects/moans (e.g., "おッ", "あん", "ジャーッ"). For regular dialogue or narration, output empty string ("") for duplicate parts to prevent repetition.
+# - **Emphasis:** If the source text is visually emphasized (bold, slanted, etc.), mirror that emphasis using the STYLING GUIDE.
+# - **Symbol:** Do not using Special characters like heart symbol.
+# - **Text Types:**
+#   - **Spoken Dialogue/Internal Monologue:** Translate naturally, matching the character's personality.
+#   - **Narration:** Translate neutrally without special styling.
+#   - **Audible SFX:** Translate physical sounds (Giongo) as standard onomatopoeia.
+#   - **Mimetic FX:** Translate atmospheric text (Gitaigo) or silent actions as descriptive verbs or adjectives. Do not add a period at the end of the word.
+#   - **Conciseness & Style (R18 Doujinshi):** This is adult (R18) doujinshi manga. Keep translations short, informal, casual, and very easy to read. Use simple everyday language. Avoid long or complex sentences—readers want quick, natural flow without effort. 
+
+# {edge_cases}
+# """  # noqa
+
+#     shared_components = f"""
+# ## ROLE
+# You are a professional manga localization translator and editor specializing in adult (R18) doujinshi.
+
+# ## OBJECTIVE
+# Your goal is to produce natural-sounding, high-quality translations in {output_language} that are faithful to the original source's meaning, tone, and visual emphasis, while being short, informal, and effortless to read.
+
+# ## STYLING GUIDE
+# You must use the following markdown-style markers to convey emphasis:
+# - `*italic*`: Used for onomatopoeias, thoughts, flashbacks, distant sounds, or dialogue mediated by a device (e.g., phone, radio).
+# - `**bold**`: Used for sound effects (SFX), shouting, timestamps, or individual emphatic words.
+# - `***bold-italic***`: Used for extremely loud sounds or dialogue that also meets the criteria for italics (e.g., shouting over a radio).
+
+# {core_rules}
+# """  # noqa
+
+#     if mode == "one-step":
+#         output_schema = f"""
+# ## OUTPUT SCHEMA
+# - You must return your response as a single numbered list with exactly one line per input image.
+# - The numbering must correspond to the input image order (1, 2, 3 ).
+# - For each item, provide both transcription and translation in the format:
+#   `i: <transcribed text> || <translated {output_language} text>` where `i` is the input image number.
+# - Do not include section headers, explanations, or formatting outside of this list.
+# """
+#     elif mode == "two-step":
+#         output_schema = f"""
+# ## OUTPUT SCHEMA
+# - You must return your response as a single numbered list with exactly one line per input text.
+# - The numbering must correspond to the input order (1, 2, 3).
+# - The format must be `i: <translated {output_language} text>` where `i` is the input text number.
+# - If a line is identified as a duplicate (non-SFX), output `i: ` (empty string).
+# - Do not include section headers, explanations, or formatting outside of this list.
+# """  # noqa
+#     else:
+#         raise ValueError(
+#             f"Invalid mode '{mode}' specified for translation system prompt."
+#         )
+
+#     return shared_components + output_schema
 
 def _build_system_prompt_translation(
     output_language: str,
@@ -82,87 +170,48 @@ def _build_system_prompt_translation(
     reading_direction: str,
     full_page_context: bool = False,
 ) -> str:
-    direction = (
-        "right-to-left"
-        if (reading_direction or "rtl").lower() == "rtl"
-        else "left-to-right"
-    )
+    direction = "right-to-left" if (reading_direction or "rtl").lower() == "rtl" else "left-to-right"
     input_type = "transcriptions" if mode == "two-step" else "image crops"
 
-    cohesion_visual = (
-        " Refer to the full-page image to resolve ambiguous context."
-        if full_page_context
-        else ""
+    # Stability fix: Explicitly forbid source language in output
+    language_enforcement = f"CRITICAL: Your output MUST be in {output_language}. Do not include any Japanese characters in the final translation unless it is a name."
+
+    edge_cases = (
+        "If input is '...', return '...'. If input is '[OCR FAILED]', return '[OCR FAILED]'."
+        if mode == "two-step" else
+        "If image is '...', return '...'. If indecipherable, return '[OCR FAILED]'."
     )
 
-    if mode == "two-step":
-        edge_cases = """- **Edge Cases:**
-  - If an input line contains standalone periods/ellipses, you must return it exactly as it appears.
-  - If an input line is the exact token `[OCR FAILED]`, you must output it unchanged."""
-    else:
-        edge_cases = """- **Edge Cases:**
-  - If an image contains standalone periods/ellipses, you must return it exactly as it appears.
-  - If text is indecipherable, you must return the exact token: `[OCR FAILED]`."""
+    # Simplified instructions without heavy Markdown
+    prompt_body = f"""
+ROLE: Professional Manga Translator (R18 Doujinshi specialist).
+OBJECTIVE: Translate {input_type} into {output_language}. {language_enforcement}
 
-
-# - **Fidelity:** Focus on intent; translate functionally rather than literally.
-# 
-    core_rules = f"""
-## CORE RULES
-- **Reading Context:** The {input_type} are presented in a {direction} reading order. Do not reorder them.
-- **Deduplication (OCR Artifacts):** Due to OCR errors, the same sentence may appear split or duplicated across multiple bubbles. Detect and remove redundancies: keep only the most complete/coherent version of overlapping content. Repetition is acceptable only for sound effects/moans (e.g., "おッ", "あん", "ジャーッ"). For regular dialogue or narration, output empty string ("") for duplicate parts to prevent repetition.
-- **Emphasis:** If the source text is visually emphasized (bold, slanted, etc.), mirror that emphasis using the STYLING GUIDE.
-- **Symbol:** Remove Special characters like heart symbol.
-- **Text Types:**
-  - **Spoken Dialogue/Internal Monologue:** Translate naturally, matching the character's personality.
-  - **Narration:** Translate neutrally without special styling.
-  - **Audible SFX:** Translate physical sounds (Giongo) as standard onomatopoeia.
-  - **Mimetic FX:** Translate atmospheric text (Gitaigo) or silent actions as descriptive verbs or adjectives. Do not add a period at the end of the word.
-  - **Conciseness & Style (R18 Doujinshi):** This is adult (R18) doujinshi manga. Keep translations short, informal, casual, and very easy to read. Use simple everyday language. Avoid long or complex sentences—readers want quick, natural flow without effort. 
+RULES:
+1. CONTEXT: Reading order is {direction}. Use full-page context to resolve ambiguity.
+2. DEDUPLICATION: OCR often produces duplicates. If a bubble is a repeat of a previous one, output an empty string "" for that ID. Only repeat for SFX/moans.
+3. STYLE: This is R18 content. Use casual, informal, and very short sentences. Use obscene vocabulary from R18 manga frequently. Effortless and passionate readability is the priority. 
+4. SFX: Translate audible sounds as standard onomatopoeia. Do not add periods to FX words.
+5. SYMBOLS: Strictly remove special symbols like hearts (♥) or stars (★).
+6. STYLING MARKERS: 
+   Use *text* for thoughts/onomatopoeia.
+   Use **text** for shouting/SFX.
+   Use ***text*** for extreme shouting.
 
 {edge_cases}
-"""  # noqa
 
-    shared_components = f"""
-## ROLE
-You are a professional manga localization translator and editor specializing in adult (R18) doujinshi.
-
-## OBJECTIVE
-Your goal is to produce natural-sounding, high-quality translations in {output_language} that are faithful to the original source's meaning, tone, and visual emphasis, while being short, informal, and effortless to read.
-
-## STYLING GUIDE
-You must use the following markdown-style markers to convey emphasis:
-- `*italic*`: Used for onomatopoeias, thoughts, flashbacks, distant sounds, or dialogue mediated by a device (e.g., phone, radio).
-- `**bold**`: Used for sound effects (SFX), shouting, timestamps, or individual emphatic words.
-- `***bold-italic***`: Used for extremely loud sounds or dialogue that also meets the criteria for italics (e.g., shouting over a radio).
-
-{core_rules}
-"""  # noqa
+OUTPUT SCHEMA:
+- Use a single numbered list: "ID: Text"
+- One line per input item. Do not skip numbers.
+- Ensure the ID matches the input sequence.
+"""
 
     if mode == "one-step":
-        output_schema = f"""
-## OUTPUT SCHEMA
-- You must return your response as a single numbered list with exactly one line per input image.
-- The numbering must correspond to the input image order (1, 2, 3...).
-- For each item, provide both transcription and translation in the format:
-  `i: <transcribed text> || <translated {output_language} text>` where `i` is the input image number.
-- Do not include section headers, explanations, or formatting outside of this list.
-"""
-    elif mode == "two-step":
-        output_schema = f"""
-## OUTPUT SCHEMA
-- You must return your response as a single numbered list with exactly one line per input text.
-- The numbering must correspond to the input order (1, 2, 3...).
-- The format must be `i: <translated {output_language} text>` where `i` is the input text number.
-- If a line is identified as a duplicate (non-SFX), output `i:` (empty string).
-- Do not include section headers, explanations, or formatting outside of this list.
-"""  # noqa
+        schema = f"FORMAT: i: <transcription> || <{output_language} translation>"
     else:
-        raise ValueError(
-            f"Invalid mode '{mode}' specified for translation system prompt."
-        )
+        schema = f"FORMAT: i: <{output_language} translation>"
 
-    return shared_components + output_schema
+    return prompt_body + schema
 
 
 def _is_reasoning_model_google(model_name: str) -> bool:
@@ -673,68 +722,83 @@ def _call_llm_endpoint(
     except (ValueError, RuntimeError):
         raise
 
-
+def clean_special_chars(text: str) -> str:
+    """
+    Removes symbols often found in Japanese manga that aren't 
+    supported by standard Chinese/English fonts.
+    """
+    # Pattern includes hearts, stars, music notes, and common decorative dingbats
+    # Add any other symbols your font fails to render here
+    unsupported_symbols = re.compile(r'[♥♡★☆♪♫♬♨💢✨💥💨💦💬💭⭐🌟]')
+    
+    # Remove the symbols
+    cleaned = unsupported_symbols.sub('', text)
+    
+    # Clean up double spaces that might result from removal
+    return " ".join(cleaned.split())
 def _parse_llm_response_unified(
     response_text: Optional[str],
     total_elements: int,
     provider: str,
     debug: bool = False,
 ) -> List[str]:
-    """Parse LLM response with a single numbered list."""
-    if response_text is None:
-        log_message(f"API call failed: {provider} returned None", always_print=True)
-        raise TranslationError(f"{provider}: API failed (returned None)")
-    elif response_text == "":
-        log_message(f"API call returned empty response: {provider}", always_print=True)
-        raise TranslationError(f"{provider}: Empty response")
+    if not response_text:
+        return [""] * total_elements
 
     try:
-        log_message(
-            f"Parsing {provider} unified response: {len(response_text)} chars",
-            verbose=debug,
-        )
-        log_message(f"Raw response:\n---\n{response_text}\n---", always_print=True)
-
-        # Pattern matches "1: text" or "1. text" or "1 text" etc.
-        pattern = re.compile(
-            r'^\s*(\d+)\s*[:.]\s*"?\s*(.*?)\s*"?\s*(?=\s*\n\s*\d+\s*[:.]|\s*$)',
-            re.MULTILINE | re.DOTALL,
-        )
-
-        matches = pattern.findall(response_text)
+        log_message(f"Parsing {provider} unified response via line-scanner...", verbose=debug)
+        
+        # We use a dictionary to store results: {int_id: "text"}
         result_dict = {}
+        lines = response_text.splitlines()
+        
+        current_id = None
+        current_content = []
 
-        for num_str, text in matches:
-            try:
-                num = int(num_str)
-                if 1 <= num <= total_elements:
-                    result_dict[num] = text.strip()
-            except ValueError:
-                continue
+        # Pattern to detect the start of a new entry: "1:", "1.", " 1: " etc.
+        id_start_pattern = re.compile(r'^\s*(\d+)\s*[:.]\s*(.*)')
+        # breakpoint()
+        for line in lines:
+            match = id_start_pattern.match(line)
+            
+            if match:
+                # We found a new ID line (e.g., "2: text")
+                # 1. Save the previous ID's content if it exists
+                if current_id is not None:
+                    result_dict[current_id] = " ".join(current_content).strip()
+                
+                # 2. Start the new ID
+                current_id = int(match.group(1))
+                # The remainder of the line is the start of the content
+                initial_content = match.group(2).strip()
+                current_content = [initial_content] if initial_content else []
+            else:
+                # This is a continuation line or an empty line for the current ID
+                if current_id is not None:
+                    current_content.append(line.strip())
 
+        # Save the final ID in the loop
+        if current_id is not None:
+            result_dict[current_id] = " ".join(current_content).strip()
+
+        # Build the final list based on expected total_elements
         final_list = []
         for i in range(1, total_elements + 1):
-            if i in result_dict:
-                final_list.append(result_dict[i])
-            else:
-                # breakpoint()
-                # Original WRONG,missing = space
-                final_list.append(" ")
+            raw_text = result_dict.get(i, "")
+            
+            # Remove leading/trailing quotes often added by LLMs
+            cleaned = raw_text.strip().strip('"').strip("'")
+            # Apply your special character filter (hearts, stars, etc.)
+            cleaned = clean_special_chars(cleaned)
+            
+            final_list.append(cleaned)
 
-        log_message(
-            f"Parsed {len(result_dict)} items from unified response (expected {total_elements})",
-            verbose=debug,
-        )
         return final_list
 
     except Exception as e:
-        log_message(
-            f"Failed to parse {provider} unified response: {str(e)}",
-            always_print=True,
-        )
-        return [f"[{provider}: Parse error]"] * total_elements
-
-
+        log_message(f"Line-parser failed: {e}", always_print=True)
+        return [""] * total_elements
+    
 def _prepare_images_for_ocr(
     images_b64: List[str], verbose: bool = False
 ) -> List[Optional[Image.Image]]:
@@ -1231,7 +1295,7 @@ For each image, you must perform two steps:
 
 ## OUTPUT FORMAT
 You must return your response as a single numbered list with exactly one line per input image.
-The numbering must correspond to the input image order (1, 2, 3...).
+The numbering must correspond to the input image order (1, 2, 3 ).
 Format: `i: <transcribed text> || <translated {output_language} text>`
 """  # noqa
 

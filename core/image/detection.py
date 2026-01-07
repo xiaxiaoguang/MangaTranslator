@@ -12,7 +12,7 @@ from utils.exceptions import ImageProcessingError, ModelError
 from utils.logging import log_message
 
 # Detection Parameters
-IOA_THRESHOLD = 0.50  # 50% IoA threshold for conjoined bubble detection
+IOA_THRESHOLD = 0.5  # 50% IoA threshold for conjoined bubble detection
 SAM_MASK_THRESHOLD = 0.5  # SAM2 mask binarization threshold
 IOA_OVERLAP_THRESHOLD = 0.5  # IoA threshold for general overlap detection between boxes
 
@@ -38,7 +38,6 @@ def _expand_boxes_with_osb_text(
     """Expand speech-bubble boxes to fully contain detected OSB text boxes."""
     if primary_boxes is None or len(primary_boxes) == 0:
         return primary_boxes
-
     try:
         model_path = str(model_manager.model_paths[ModelType.YOLO_OSBTEXT])
         cache_key = cache.get_yolo_cache_key(image_pil, model_path, confidence)
@@ -100,7 +99,6 @@ def _expand_boxes_with_osb_text(
                 max(bx1, tx1),
                 max(by1, ty1),
             ]
-
         return torch.tensor(
             pb_np, device=primary_boxes.device, dtype=primary_boxes.dtype
         )
@@ -108,6 +106,20 @@ def _expand_boxes_with_osb_text(
         log_message(f"OSB text verification skipped: {e}", verbose=verbose)
         return primary_boxes
 
+def _calculate_iou(box_a, box_b):
+    """Calculates Intersection over Union (IoU)."""
+    xA = max(box_a[0], box_b[0])
+    yA = max(box_a[1], box_b[1])
+    xB = min(box_a[2], box_b[2])
+    yB = min(box_a[3], box_b[3])
+
+    inter_area = max(0, xB - xA) * max(0, yB - yA)
+    box_a_area = (box_a[2] - box_a[0]) * (box_a[3] - box_a[1])
+    box_b_area = (box_b[2] - box_b[0]) * (box_b[3] - box_b[1])
+    
+    union_area = box_a_area + box_b_area - inter_area
+    if union_area <= 0: return 0
+    return inter_area / float(union_area)
 
 def _calculate_ioa(box_inner, box_outer):
     """Calculate Intersection over Area (IoA) for two bounding boxes.
@@ -137,58 +149,62 @@ def _calculate_ioa(box_inner, box_outer):
     return intersection / area_inner if area_inner > 0 else 0.0
 
 
-def _categorize_detections(primary_boxes, secondary_boxes, ioa_threshold=IOA_THRESHOLD):
-    """Categorize detections into simple and conjoined bubbles.
-
-    Args:
-        primary_boxes: Tensor of primary YOLO detection boxes (N, 4)
-        secondary_boxes: Tensor of secondary YOLO detection boxes (M, 4)
-        ioa_threshold: Threshold for determining if a secondary box is contained in a primary box
-
-    Returns:
-        tuple: (conjoined_indices, simple_indices)
-            - conjoined_indices: List of tuples (primary_idx, [secondary_indices])
-            - simple_indices: List of primary indices that are simple bubbles
+def _categorize_detections(primary_boxes, secondary_boxes, ioa_threshold=0.5, iou_threshold=0.5):
     """
-    # Handle cases where one bubble is detected on the page and is conjoined
-    if primary_boxes.ndim == 1 and primary_boxes.numel() == 4:
-        primary_boxes = primary_boxes.unsqueeze(0)
-    if secondary_boxes.ndim == 1 and secondary_boxes.numel() == 4:
-        secondary_boxes = secondary_boxes.unsqueeze(0)
+    Improved categorization that prevents duplicates by:
+    1. Deduplicating primary boxes against each other.
+    2. Preferring secondary splits even if only ONE sub-bubble is found.
+    """
+    if primary_boxes.ndim == 1: primary_boxes = primary_boxes.unsqueeze(0)
+    if secondary_boxes.ndim == 1: secondary_boxes = secondary_boxes.unsqueeze(0)
 
     conjoined_indices = []
     processed_secondary_indices = set()
+    
+    # 1. Self-Deduplicate Primary Boxes (NMS)
+    # This prevents two primary detections of the same bubble from doubling up
+    keep_primary = []
+    for i in range(len(primary_boxes)):
+        is_redundant = False
+        for j in keep_primary:
+            if _calculate_iou(primary_boxes[i].tolist(), primary_boxes[j].tolist()) > iou_threshold:
+                is_redundant = True
+                break
+        if not is_redundant:
+            keep_primary.append(i)
 
-    for i, p_box in enumerate(primary_boxes):
+    # 2. Match Secondary Splits to Primary Containers
+    for i in keep_primary:
+        p_box = primary_boxes[i].tolist()
         contained_indices = []
         for j, s_box in enumerate(secondary_boxes):
-            if j in processed_secondary_indices:
-                continue
-            ioa = _calculate_ioa(s_box.tolist(), p_box.tolist())
-            if ioa > ioa_threshold:
+            # We use IoA: is the secondary box INSIDE the primary box?
+            if _calculate_ioa(s_box.tolist(), p_box) > ioa_threshold:
                 contained_indices.append(j)
 
-        if len(contained_indices) >= 2:
+        # CHANGE: Even if only 1 sub-bubble is found, if it covers a significant 
+        # part of the primary, we treat it as a replacement to avoid double-OCR.
+        if len(contained_indices) >= 1:
             conjoined_indices.append((i, contained_indices))
             processed_secondary_indices.update(contained_indices)
 
+    # 3. Finalize Simple Indices
     primary_simple_indices = []
     conjoined_primary_indices = {c[0] for c in conjoined_indices}
 
-    for i in range(len(primary_boxes)):
+    for i in keep_primary:
         if i in conjoined_primary_indices:
             continue
-
-        # Check for duplication against processed secondary bubbles
+        
+        # Check if this primary bubble was already partially covered 
+        # by a secondary bubble used elsewhere
         is_duplicate = False
         p_box_list = primary_boxes[i].tolist()
-
         for s_idx in processed_secondary_indices:
-            s_box_list = secondary_boxes[s_idx].tolist()
-            if _calculate_ioa(s_box_list, p_box_list) > ioa_threshold:
+            if _calculate_ioa(secondary_boxes[s_idx].tolist(), p_box_list) > ioa_threshold:
                 is_duplicate = True
                 break
-
+        
         if not is_duplicate:
             primary_simple_indices.append(i)
 
@@ -376,6 +392,7 @@ def detect_speech_bubbles(
     )
 
     secondary_boxes = torch.tensor([])
+    
     if use_sam2:
         try:
             secondary_model = model_manager.load_yolo_conjoined_bubble()
@@ -424,7 +441,6 @@ def detect_speech_bubbles(
                         s_box_list = s_box.tolist()
 
                         is_covered = False
-
                         for p_box_list in primary_boxes_list:
                             ioa_s_in_p = _calculate_ioa(s_box_list, p_box_list)
                             ioa_p_in_s = _calculate_ioa(p_box_list, s_box_list)
@@ -456,7 +472,6 @@ def detect_speech_bubbles(
             if text_free_boxes and len(primary_boxes) > 0:
                 indices_to_remove = []
                 primary_boxes_list = primary_boxes.tolist()
-
                 for i, p_box in enumerate(primary_boxes_list):
                     overlaps_text_free = False
                     for tf_box in text_free_boxes:
@@ -497,7 +512,6 @@ def detect_speech_bubbles(
                 verbose=verbose,
             )
             secondary_boxes = torch.tensor([])
-
     if osb_text_verification and len(primary_boxes) > 0:
         primary_boxes = _expand_boxes_with_osb_text(
             image_cv,
