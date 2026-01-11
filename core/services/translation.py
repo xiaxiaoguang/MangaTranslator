@@ -880,7 +880,7 @@ def _check_ocr_failure(texts: List[str], provider: Optional[str] = None) -> bool
 
 
 def _format_special_instructions(config: TranslationConfig) -> str:
-    """Format special instructions section for prompts.
+    """Format user's special instructions section for prompts.
 
     Args:
         config: TranslationConfig with special_instructions

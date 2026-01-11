@@ -429,6 +429,11 @@ def main():
         help="Skip translation and text rendering, output only the cleaned speech bubbles",
     )
     parser.add_argument(
+        "--upscaling-only",
+        action="store_true",
+        help="Skip detection and translation, only upscale the image",
+    )
+    parser.add_argument(
         "--test-mode",
         action="store_true",
         help="Skip translation and render placeholder text (lorem ipsum)",
@@ -658,7 +663,9 @@ def main():
 
     # --- Validate mutually exclusive flags ---
     try:
-        validate_mutually_exclusive_modes(args.cleaning_only, args.test_mode)
+        validate_mutually_exclusive_modes(
+            args.cleaning_only, args.upscaling_only, args.test_mode
+        )
     except Exception as e:
         parser.error(str(e))
 
@@ -736,11 +743,15 @@ def main():
 
     target_device = (
         torch.device("cpu")
-        if args.cpu or not torch.cuda.is_available()
-        else torch.device("cuda")
+        if args.cpu
+        else torch.device(
+            "cuda"
+            if torch.cuda.is_available()
+            else "mps" if torch.backends.mps.is_available() else "cpu"
+        )
     )
     log_message(
-        f"Using {'CPU' if target_device.type == 'cpu' else 'CUDA'} device.",
+        f"Using {target_device.type.upper()} device.",
         always_print=True,
     )
 
@@ -757,6 +768,7 @@ def main():
         verbose=args.verbose,
         device=target_device,
         cleaning_only=args.cleaning_only,
+        upscaling_only=args.upscaling_only,
         detection=DetectionConfig(
             confidence=args.confidence,
             conjoined_confidence=args.conjoined_confidence,

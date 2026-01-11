@@ -30,20 +30,49 @@ Gradio-based web application for automating the translation of manga/comic page 
 ## Requirements
 
 - Python 3.10+
-- PyTorch (CPU, CUDA, ROCm)
-- YOLO model (`.pt`) for speech bubble detection; auto-downloaded
-- Font pack with `.ttf`/`.otf`
-- Any LLM for Japanese source text; vision-capable LLM for other languages (API or local)
+- PyTorch (CPU, CUDA, ROCm, MPS)
+- Font pack with `.ttf`/`.otf` files; included with portable package
+- LLM for Japanese source text; VLM for other languages (API or local)
 
 ## Install
 
-### Windows portable
+### Portable Package (Recommended)
 
-Download the standalone zip from the releases page: [Releases](https://github.com/meangrinch/MangaTranslator/releases)
+Download the standalone zip from the releases page: [Portable Build](https://github.com/meangrinch/MangaTranslator/releases/tag/portable)
 
-- Default package: Download once, run `setup.bat` before first launch to install dependencies, and `update-standalone.bat` to update to the latest version (see [Updating](#updating)). Installs `PyTorch v2.9.1+cu128`.
-- Pre-downloaded package: Download per version, no setup required, and no included update script. Contains `PyTorch v2.9.1+cu128`.
-- Both include the Komika (for normal text), Cookies (for OSB text), and Comicka (for either) font packs
+**Supported Platforms:**
+
+| Platform              | GPU/Acceleration Support       | Inpainting Method                |
+| --------------------- | ------------------------------ | -------------------------------- |
+| Windows               | NVIDIA (CUDA), AMD (ROCm), CPU | Flux Kontext (CUDA only), OpenCV |
+| Linux                 | NVIDIA (CUDA), AMD (ROCm), CPU | Flux Kontext (CUDA only), OpenCV |
+| macOS (Apple Silicon) | M-Series GPU (MPS), CPU        | OpenCV                           |
+| macOS (Intel)         | CPU                            | OpenCV                           |
+
+**Setup:**
+
+1. Extract the zip file
+2. Run the setup script for your platform:
+   - **Windows:** Double-click `setup.bat`
+   - **Linux/macOS:** Run `./setup.sh` in terminal
+3. The setup wizard will:
+   - Detect your GPU and install the appropriate PyTorch version
+   - Install all required dependencies
+   - Optionally install Nunchaku for Flux Kontext inpainting (NVIDIA CUDA only)
+   - Create a launcher script (`start-webui.bat` or `start-webui.sh`)
+
+**Requirements:**
+
+- **Windows:** Bundled Python/Git included; no additional requirements
+- **Linux/macOS:** Python 3.10+ and Git must be installed on your system
+
+Includes the Komika (for normal text), Cookies (for OSB text), and Comicka (for either) font packs
+
+> [!TIP]
+> In the event that you need to transfer to a fresh portable package:
+>
+> - You can safely move the `fonts`, `models`, and `output` directories to the new portable package
+> - You can likely also move the `runtime` directory over, assuming the same setup configuration is wanted
 
 ### Manual install
 
@@ -73,13 +102,13 @@ pip install torch==2.9.1+cu128 torchvision==0.24.1+cu128 --extra-index-url https
 pip install torch torchvision
 ```
 
-4. Install Nunchaku (optional, for inpainting OSB text regions with Flux Kontext; not required for OpenCV inpainting)
+4. Install Nunchaku (optional, for inpainting OSB text regions with Flux Kontext)
 
-- Nunchaku wheels are not on PyPI. Install directly from the v1.0.2 GitHub release URL, matching your OS and Python version. CUDA only.
+- Nunchaku wheels are not on PyPI. Install directly from the v1.1.0 GitHub release URL, matching your OS and Python version. CUDA only.
 
 ```bash
 # Example (Windows, Python 3.13, PyTorch 2.9.1)
-pip install https://github.com/nunchaku-tech/nunchaku/releases/download/v1.0.2/nunchaku-1.0.2+torch2.9-cp313-cp313-win_amd64.whl
+pip install https://github.com/nunchaku-tech/nunchaku/releases/download/v1.1.0/nunchaku-1.1.0+torch2.9-cp313-cp313-win_amd64.whl
 ```
 
 5. Install dependencies
@@ -141,15 +170,16 @@ If you want to use the OSB text pipeline, you need a Hugging Face token with acc
 
 ### Web UI (Gradio)
 
-- Windows: double-click `start-webui.bat` (`venv` must be present for manual install)
-- Or run:
-
-```bash
-python app.py --open-browser
-```
+- **Portable package:**
+  - Windows: Double-click `start-webui.bat` inside the `MangaTranslator` folder
+  - Linux/macOS: Run `./start-webui.sh` inside the `MangaTranslator` folder
+- **Manual install:**
+  - Windows: Run `python app.py --open-browser`
 
 Options: `--models` (default `./models`), `--fonts` (default `./fonts`), `--port` (default `7676`), `--cpu`.
 First launch can take ~1–2 minutes.
+
+Once launched, configure your LLM provider in the Config tab, then upload images and click Translate.
 
 ### CLI
 
@@ -175,21 +205,15 @@ python main.py --input <image_path> \
 # Cleaning-only mode (no translation/text rendering)
 python main.py --input <image_path> --cleaning-only
 
+# Upscaling-only mode (no detection/translation, only upscale)
+python main.py --input <image_path> --upscaling-only --image-upscale-mode final --image-upscale-factor 2.0
+
 # Test mode (no translation; render placeholder text)
 python main.py --input <image_path> --test-mode
 
 # Full options
 python main.py --help
 ```
-
-## Web UI (Quick Start)
-
-1. Launch the Web UI (use `start-webui.bat` on Windows, or the command above)
-2. Upload image(s) in the Translator tab (single) or Batch tab (multiple)
-3. Choose a font pack; set source/target languages
-4. Open **Config** and set: LLM provider/model, API key or endpoint, reading direction (`rtl` for manga, `ltr` for comics)
-5. Click **Translate** / **Start Batch Translating** — outputs save to `./output/`
-6. Enable "Cleaning-only Mode" or "Test Mode" in **Other** to skip translation and/or render placeholder text
 
 ## Documentation
 
@@ -198,16 +222,18 @@ python main.py --help
 
 ## Updating
 
-- Windows portable:
-  - Default Package: Run `update-standalone.bat`. To update requirements, run `update-standalone.bat` -> `setup.bat`
-  - Pre-downloaded Package: Download the latest version from the releases page
-- Manual install: from the repo root:
+### Portable Package
+
+- Windows: Run `update.bat` from the portable package root
+- Linux/macOS: Run `./update.sh` from the portable package root
+
+### Manual Install
+
+From the repo root:
 
 ```bash
 git pull
-# Update requirements if needed
-venv\Scripts\activate  # If venv present
-pip install -r requirements.txt
+pip install -r requirements.txt  # Or activate venv first if present
 ```
 
 ## License & credits
