@@ -190,7 +190,7 @@ OBJECTIVE: Translate {input_type} into {output_language}. {language_enforcement}
 RULES:
 1. CONTEXT: Reading order is {direction}. Use full-page context to resolve ambiguity.
 2. DEDUPLICATION: OCR often produces duplicates. If a bubble is a repeat of a previous one, output an empty string "" for that ID. Only repeat for SFX/moans.
-3. STYLE: This is R18 content. Use casual, informal, and very short sentences. Use obscene vocabulary from R18 manga frequently. Effortless and passionate readability is the priority. 
+3. STYLE: This is R18 content. Use casual, informal sentences. Use obscene vocabulary from R18 manga frequently. Effortless and passionate readability is the priority. 
 4. SFX: Translate audible sounds as standard onomatopoeia. Do not add periods to FX words.
 5. SYMBOLS: Strictly remove special symbols like hearts (♥) or stars (★).
 6. STYLING MARKERS: 
@@ -567,6 +567,7 @@ def _call_llm_endpoint(
     """Internal helper to dispatch API calls based on provider."""
     provider = config.provider
     model_name = config.model_name
+    breakpoint()
     api_parts = parts + [{"text": prompt_text}]
 
     try:
